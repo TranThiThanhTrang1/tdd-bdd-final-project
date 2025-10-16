@@ -1,134 +1,170 @@
-######################################################################
-# Copyright 2016, 2021 John J. Rofrano. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-######################################################################
-
-# pylint: disable=function-redefined, missing-function-docstring
-# flake8: noqa
-"""
-Web Steps
-
-Steps file for web interactions with Selenium
-
-For information on Waiting until elements are present in the HTML see:
-    https://selenium-python.readthedocs.io/waits.html
-"""
 import logging
 from behave import when, then
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
-from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support import expected_conditions as EC
 
 ID_PREFIX = 'product_'
 
-
+##################################################################
+# Visit Page & Title Checks
+##################################################################
 @when('I visit the "Home Page"')
 def step_impl(context):
-    """ Make a call to the base URL """
     context.driver.get(context.base_url)
-    # Uncomment next line to take a screenshot of the web page
-    # context.driver.save_screenshot('home_page.png')
 
 @then('I should see "{message}" in the title')
 def step_impl(context, message):
-    """ Check the document title for a message """
-    assert(message in context.driver.title)
+    assert message in context.driver.title, f'Expected "{message}" in title but got "{context.driver.title}"'
 
 @then('I should not see "{text_string}"')
 def step_impl(context, text_string):
     element = context.driver.find_element(By.TAG_NAME, 'body')
-    assert(text_string not in element.text)
+    assert text_string not in element.text, f'Found forbidden text "{text_string}"'
 
+##################################################################
+# Field Input & Dropdown
+##################################################################
 @when('I set the "{element_name}" to "{text_string}"')
 def step_impl(context, element_name, text_string):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = context.driver.find_element(By.ID, element_id)
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
+    )
     element.clear()
     element.send_keys(text_string)
 
 @when('I select "{text}" in the "{element_name}" dropdown')
 def step_impl(context, text, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = Select(context.driver.find_element(By.ID, element_id))
-    element.select_by_visible_text(text)
+    select = Select(WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
+    ))
+    for option in select.options:
+        if option.text.strip().lower() == text.strip().lower():
+            option.click()
+            return
+    raise Exception(f'Cannot find dropdown option: {text}')
 
 @then('I should see "{text}" in the "{element_name}" dropdown')
 def step_impl(context, text, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = Select(context.driver.find_element(By.ID, element_id))
-    assert(element.first_selected_option.text == text)
+    select = Select(context.driver.find_element(By.ID, element_id))
+    assert select.first_selected_option.text.strip() == text.strip(), \
+        f'Expected "{text}" but selected "{select.first_selected_option.text}"'
 
 @then('the "{element_name}" field should be empty')
 def step_impl(context, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
     element = context.driver.find_element(By.ID, element_id)
-    assert(element.get_attribute('value') == u'')
+    assert element.get_attribute('value') == '', f'Expected empty field but got "{element.get_attribute("value")}"'
 
 ##################################################################
-# These two function simulate copy and paste
+# Copy & Paste Simulation
 ##################################################################
 @when('I copy the "{element_name}" field')
 def step_impl(context, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = WebDriverWait(context.driver, context.wait_seconds).until(
-        expected_conditions.presence_of_element_located((By.ID, element_id))
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
     )
-    context.clipboard = element.get_attribute('value')
-    logging.info('Clipboard contains: %s', context.clipboard)
+    context.last_product_id = element.get_attribute('value')
+    logging.info('Saved last_product_id: %s', context.last_product_id)
 
-@when('I paste the "{element_name}" field')
-def step_impl(context, element_name):
-    element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = WebDriverWait(context.driver, context.wait_seconds).until(
-        expected_conditions.presence_of_element_located((By.ID, element_id))
+@when('I paste the saved "Id" field')
+def step_impl(context):
+    if not hasattr(context, 'last_product_id'):
+        raise Exception('No last_product_id found! Did you copy it first?')
+    
+    element_id = ID_PREFIX + "id"  # giả sử ID field có id="product_id"
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
     )
     element.clear()
-    element.send_keys(context.clipboard)
+    element.send_keys(context.last_product_id)
+
+@then('the ID should be saved for later use')
+def step_impl(context):
+    if not hasattr(context, 'last_product_id'):
+        raise Exception('No product ID saved in context!')
 
 ##################################################################
-# This code works because of the following naming convention:
-# The buttons have an id in the html hat is the button text
-# in lowercase followed by '-btn' so the Clean button has an id of
-# id='clear-btn'. That allows us to lowercase the name and add '-btn'
-# to get the element id of any button
+# Button Clicks
 ##################################################################
-
-## UPDATE CODE HERE ##
+@when('I press the "{button_name}" button')
+def step_impl(context, button_name):
+    button_id = button_name.lower() + '-btn'
+    button = WebDriverWait(context.driver, 10).until(
+        EC.element_to_be_clickable((By.ID, button_id))
+    )
+    button.click()
 
 ##################################################################
-# This code works because of the following naming convention:
-# The id field for text input in the html is the element name
-# prefixed by ID_PREFIX so the Name field has an id='pet_name'
-# We can then lowercase the name and prefix with pet_ to get the id
+# Flash Message Verification
 ##################################################################
+@then('I should see the message "{message}"')
+def step_impl(context, message):
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, 'flash_message'))
+    )
+    assert message in element.text, f'Expected "{message}" but got "{element.text}"'
 
+##################################################################
+# Product List Verification
+##################################################################
+@then('I should not see "{text}" in the product list')
+def step_impl(context, text):
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, 'search_results'))
+    )
+    assert text not in element.text, f'Found "{text}" in search results'
+
+@then('I should see "{product_name}" in the product list')
+def step_impl(context, product_name):
+    # đợi dữ liệu trong bảng load xong
+    WebDriverWait(context.driver, 20).until(
+        lambda driver: len(driver.find_elements(By.CSS_SELECTOR, "#search_results tr")) > 1
+    )
+
+    rows = context.driver.find_elements(By.CSS_SELECTOR, "#search_results tr")[1:]  # bỏ header
+    found = any(product_name.lower() in row.text.lower() for row in rows)
+    assert found, f'Expected "{product_name}" in search results, found "{[row.text for row in rows]}"'
+
+@then('I should see only products with "Category" equal to "{category}"')
+def step_impl(context, category):
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, 'search_results'))
+    )
+    lines = [line for line in element.text.splitlines() if line.strip() and not line.startswith("ID ")]
+    for line in lines:
+        assert category.upper() in line, f'Line "{line}" không thuộc category "{category}"'
+
+@then('I should see only products with "Available" equal to "{available}"')
+def step_impl(context, available):
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, 'search_results'))
+    )
+    lines = [line for line in element.text.splitlines() if line.strip() and not line.startswith("ID ")]
+    for line in lines:
+        assert available in line, f'Line "{line}" không đúng Available="{available}"'
+
+##################################################################
+# Field Verification & Change
+##################################################################
 @then('I should see "{text_string}" in the "{element_name}" field')
 def step_impl(context, text_string, element_name):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    found = WebDriverWait(context.driver, context.wait_seconds).until(
-        expected_conditions.text_to_be_present_in_element_value(
-            (By.ID, element_id),
-            text_string
-        )
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
     )
-    assert(found)
+    actual = element.get_attribute('value')
+    assert actual == text_string, f'Expected "{text_string}" but got "{actual}"'
 
 @when('I change "{element_name}" to "{text_string}"')
 def step_impl(context, element_name, text_string):
     element_id = ID_PREFIX + element_name.lower().replace(' ', '_')
-    element = WebDriverWait(context.driver, context.wait_seconds).until(
-        expected_conditions.presence_of_element_located((By.ID, element_id))
+    element = WebDriverWait(context.driver, 10).until(
+        EC.presence_of_element_located((By.ID, element_id))
     )
     element.clear()
     element.send_keys(text_string)

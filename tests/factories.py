@@ -9,9 +9,6 @@
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 # pylint: disable=too-few-public-methods
 
 """
@@ -19,16 +16,22 @@ Test Factory to make fake objects for testing
 """
 import factory
 from factory.fuzzy import FuzzyChoice, FuzzyDecimal
+from faker import Faker
 from service.models import Product, Category
 
+faker = Faker()
 
 class ProductFactory(factory.Factory):
     """Creates fake products for testing"""
 
     class Meta:
         """Maps factory to data model"""
-
         model = Product
 
-    id = factory.Sequence(lambda n: n)
-   ## Add code to create Fake Products 
+    # id = factory.Sequence(lambda n: n)
+    name = factory.LazyAttribute(lambda _: faker.word().title())
+    description = factory.LazyAttribute(lambda _: faker.sentence(nb_words=6))
+    price = FuzzyDecimal(1.00, 1000.00, precision=2)
+    available = FuzzyChoice([True, False])
+    category = FuzzyChoice([Category.CLOTHS, Category.FOOD, Category.HOUSEWARES, 
+                            Category.AUTOMOTIVE, Category.TOOLS, Category.UNKNOWN])
